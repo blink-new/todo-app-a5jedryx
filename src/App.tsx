@@ -1,127 +1,168 @@
 
 import { useState, useEffect } from 'react'
-import { Plus } from 'lucide-react'
-
-interface Todo {
-  id: string
-  text: string
-  completed: boolean
-}
+import { TaskInput } from './components/TaskInput'
+import { TaskList } from './components/TaskList'
+import { Task, MAX_FOCUSED_TASKS } from './lib/types'
+import { Button } from './components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from './components/ui/tabs'
+import { Brain, ListTodo } from 'lucide-react'
 
 export default function App() {
-  const [todos, setTodos] = useState<Todo[]>(() => {
-    const saved = localStorage.getItem('todos')
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    const saved = localStorage.getItem('tasks')
     return saved ? JSON.parse(saved) : []
   })
-  const [newTodo, setNewTodo] = useState('')
-  const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all')
+  
+  const [focusMode, setFocusMode] = useState(false)
 
   useEffect(() => {
-    localStorage.setItem('todos', JSON.stringify(todos))
-  }, [todos])
+    localStorage.setItem('tasks', JSON.stringify(tasks))
+  }, [tasks])
 
-  const addTodo = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newTodo.trim()) return
-    
-    setTodos(prev => [
+  const addTask = (text: string, priority: number) => {
+    setTasks(prev => [
       {
         id: crypto.randomUUID(),
-        text: newTodo.trim(),
-        completed: false
+        text,
+        completed: false,
+        priority,
+        created_at: new Date().toISOString(),
+        is_focused: false
       },
       ...prev
     ])
-    setNewTodo('')
   }
 
-  const toggleTodo = (id: string) => {
-    setTodos(prev => prev.map(todo => 
-      todo.id === id ? { ...todo, completed: !todo.completed } : todo
+  const toggleTask = (id: string) => {
+    setTasks(prev => prev.map(task => 
+      task.id === id ? { ...task, completed: !task.completed } : task
     ))
   }
 
-  const deleteTodo = (id: string) => {
-    setTodos(prev => prev.filter(todo => todo.id !== id))
+  const deleteTask = (id: string) => {
+    setTasks(prev => prev.filter(task => task.id !== id))
   }
 
-  const filteredTodos = todos.filter(todo => {
-    if (filter === 'active') return !todo.completed
-    if (filter === 'completed') return todo.completed
-    return true
+  const toggleFocus = (id: string) => {
+    setTasks(prev => {
+      const focusedCount = prev.filter(t => t.is_focused && t.id !== id).length
+      const task = prev.find(t => t.id === id)
+      
+      if (!task) return prev
+      
+      // If task is already focused, we can always unfocus it
+      if (task.is_focused) {
+        return prev.map(t => 
+          t.id === id ? { ...t, is_focused: false } : t
+        )
+      }
+      
+      // Otherwise, only allow focusing if we haven't hit the limit
+      if (focusedCount < MAX_FOCUSED_TASKS) {
+        return prev.map(t => 
+          t.id === id ? { ...t, is_focused: true } : t
+        )
+      }
+      
+      return prev
+    })
+  }
+
+  const focusedTasks = tasks.filter(t => t.is_focused)
+  const remainingFocusSlots = MAX_FOCUSED_TASKS - focusedTasks.length
+  
+  const sortedTasks = [...tasks].sort((a, b) => {
+    // Sort by priority first (1 is highest)
+    if (a.priority !== b.priority) return a.priority - b.priority
+    // Then by completion status
+    if (a.completed !== b.completed) return a.completed ? 1 : -1
+    // Finally by creation date
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   })
 
-  const remaining = todos.filter(todo => !todo.completed).length
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-100 to-purple-100 py-8 px-4">
-      <div className="max-w-md mx-auto bg-white rounded-xl shadow-xl overflow-hidden">
-        <div className="p-6">
-          <h1 className="text-3xl font-bold text-gray-800 mb-8">Todo List</h1>
-          
-          <form onSubmit={addTodo} className="flex gap-2 mb-6">
-            <input
-              type="text"
-              value={newTodo}
-              onChange={(e) => setNewTodo(e.target.value)}
-              placeholder="Add a new task..."
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-            />
-            <button
-              type="submit"
-              className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition-all"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
-          </form>
-
-          <div className="flex gap-2 mb-6">
-            {(['all', 'active', 'completed'] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-3 py-1 rounded-full text-sm capitalize transition-all ${
-                  filter === f
-                    ? 'bg-purple-500 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-50 py-8 px-4">
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-white rounded-xl shadow-xl overflow-hidden">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-8">
+              <h1 className="text-3xl font-bold text-gray-900">
+                Focus Mode
+              </h1>
+              <Tabs 
+                defaultValue="all" 
+                value={focusMode ? "focus" : "all"}
+                onValueChange={(v) => setFocusMode(v === "focus")}
               >
-                {f}
-              </button>
-            ))}
-          </div>
+                <TabsList>
+                  <TabsTrigger value="all">
+                    <ListTodo className="w-4 h-4 mr-2" />
+                    All Tasks
+                  </TabsTrigger>
+                  <TabsTrigger value="focus">
+                    <Brain className="w-4 h-4 mr-2" />
+                    Focus ({focusedTasks.length}/{MAX_FOCUSED_TASKS})
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
 
-          <div className="space-y-2">
-            {filteredTodos.map(todo => (
-              <div
-                key={todo.id}
-                className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg group animate-fade-in"
-              >
-                <input
-                  type="checkbox"
-                  checked={todo.completed}
-                  onChange={() => toggleTodo(todo.id)}
-                  className="w-5 h-5 rounded border-gray-300 text-purple-500 focus:ring-purple-500 transition-all"
+            {focusMode ? (
+              <>
+                {focusedTasks.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Brain className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      No focused tasks yet
+                    </h3>
+                    <p className="text-gray-500 mb-4">
+                      Select up to 3 important tasks to focus on
+                    </p>
+                    <Button
+                      onClick={() => setFocusMode(false)}
+                      variant="outline"
+                    >
+                      Add Tasks
+                    </Button>
+                  </div>
+                ) : (
+                  <TaskList
+                    tasks={focusedTasks}
+                    onToggleTask={toggleTask}
+                    onDeleteTask={deleteTask}
+                    onToggleFocus={toggleFocus}
+                    focusMode
+                  />
+                )}
+              </>
+            ) : (
+              <>
+                <TaskInput 
+                  onAddTask={addTask}
+                  disabled={false}
                 />
-                <span
-                  className={`flex-1 ${
-                    todo.completed ? 'text-gray-400 line-through' : 'text-gray-700'
-                  }`}
-                >
-                  {todo.text}
-                </span>
-                <button
-                  onClick={() => deleteTodo(todo.id)}
-                  className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600 transition-all"
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 text-sm text-gray-500">
-            {remaining} task{remaining === 1 ? '' : 's'} remaining
+                
+                <div className="mt-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold text-gray-900">
+                      All Tasks
+                    </h2>
+                    {remainingFocusSlots > 0 && (
+                      <span className="text-sm text-gray-500">
+                        Select {remainingFocusSlots} more task{remainingFocusSlots !== 1 ? 's' : ''} to focus on
+                      </span>
+                    )}
+                  </div>
+                  
+                  <TaskList
+                    tasks={sortedTasks}
+                    onToggleTask={toggleTask}
+                    onDeleteTask={deleteTask}
+                    onToggleFocus={toggleFocus}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
